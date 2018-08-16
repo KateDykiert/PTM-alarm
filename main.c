@@ -2,13 +2,13 @@
 #include "stm32f4_discovery.h"
 #include<stdio.h>
 #include<stdlib.h>
-#include "audio2.h"
+#include "Audio2.h"
 
 /*
  * Guziczki
- * K0 -> A1
- * K1 -> A2
- * K2 -> A3
+ * K0 -> B0
+ * K1 -> B1
+ * K2 -> B4
  *
  * Wyświetlacz
  * a -> E4
@@ -22,7 +22,7 @@
  *
  * DAC
  * IN -> A4
- * ADC1 -> A5
+ * ADC1 -> A1
  *
  *
  *
@@ -39,10 +39,11 @@ int d = 0;
 int segment = 0;
 int mode = 0;
 int a1 = 0, b1 = 0, c1 = 0 , d1 = 0;
-int counter_seg = -1;
+int counter_seg = 0;
 int iter;
 int ADC_Result, solution;
 int on_off = 1;
+int set=0;
 
 volatile int segments[]={GPIO_Pin_4,GPIO_Pin_5,GPIO_Pin_6,GPIO_Pin_7,GPIO_Pin_8,GPIO_Pin_9,GPIO_Pin_10,GPIO_Pin_11};
 volatile int i=0;
@@ -78,12 +79,10 @@ void TIM4_IRQHandler(void)
 {
 	if(TIM_GetITStatus(TIM4, TIM_IT_Update) != RESET)
 	{
-
 		if(iter==123200) iter=0;
 
-		DAC_SetChannel1Data(DAC_Align_12b_R,rawAudio[iter]*ADC_Result/1000);
+		DAC_SetChannel1Data(DAC_Align_12b_R,rawAudio[iter]); // regulacja glosnosci adcresult
 		++iter;
-
 
 		TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
 	}
@@ -192,14 +191,15 @@ void TIM5_IRQHandler(void)
 
 void EXTI0_IRQHandler(void)
 {
-         	if(EXTI_GetITStatus(EXTI_Line0) != RESET)
-         	{
-         		on_off = 1;
-         		TIM_Cmd(TIM4, DISABLE);
-         		a1=0; b1=0; c1=0; d1=0;
+	if(EXTI_GetITStatus(EXTI_Line0) != RESET)
+	{
+		on_off = 1;
+		TIM_Cmd(TIM4, DISABLE);
+		a1=0; b1=0; c1=0; d1=0;
+		counter_seg=0;
 
-         		EXTI_ClearITPendingBit(EXTI_Line0);
-   	   	}
+		EXTI_ClearITPendingBit(EXTI_Line0);
+	}
 }
 
 
@@ -260,7 +260,7 @@ int main(void)
 	NVIC_Init(&NVIC_InitStructure5);
 
 	TIM_Cmd(TIM2, ENABLE);
-	TIM_Cmd(TIM5, ENABLE);
+	TIM_Cmd(TIM5, DISABLE);
 
 	TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
 	TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
@@ -273,15 +273,15 @@ int main(void)
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////
 	//set alarm
 
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
 
 	GPIO_InitTypeDef GPIO_InitStructure3;
-	GPIO_InitStructure3.GPIO_Pin = GPIO_Pin_1 | GPIO_Pin_2 | GPIO_Pin_3;
+	GPIO_InitStructure3.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_4;
 	GPIO_InitStructure3.GPIO_Mode = GPIO_Mode_IN;
 	GPIO_InitStructure3.GPIO_OType = GPIO_OType_PP;
 	GPIO_InitStructure3.GPIO_Speed = GPIO_Speed_100MHz;
 	GPIO_InitStructure3.GPIO_PuPd = GPIO_PuPd_UP;
-	GPIO_Init(GPIOA, &GPIO_InitStructure3);
+	GPIO_Init(GPIOB, &GPIO_InitStructure3);
 
 	//timer wyświetlający ustawianą godzinę
 
@@ -305,8 +305,10 @@ int main(void)
 	TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
 
 	///////////////////////////////////////////////////////////////////////////////////////////////////////
-	//plying alarm
+	//playing alarm
+
 	SystemInit();
+
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
 	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC, ENABLE);
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
@@ -314,7 +316,7 @@ int main(void)
 	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
 
 	GPIO_InitTypeDef GPIO_InitStructure4;
-	GPIO_InitStructure4.GPIO_Pin = GPIO_Pin_4 | GPIO_Pin_5;
+	GPIO_InitStructure4.GPIO_Pin = GPIO_Pin_4 | GPIO_Pin_1;
 	GPIO_InitStructure4.GPIO_Mode = GPIO_Mode_AN;
 	GPIO_InitStructure4.GPIO_Speed = GPIO_Speed_100MHz;
 	GPIO_InitStructure4.GPIO_PuPd = GPIO_PuPd_NOPULL;
@@ -393,66 +395,112 @@ int main(void)
 
 	for(;;)
 	{
-		if(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_1) == 0)
-		{
-			if(mode == 0)
+		while(set == 0){
+			if(GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_0) == 0 && set == 0)
 			{
-				mode = 1;
-				on_off = 0;
-				TIM_Cmd(TIM2, DISABLE);
-				TIM_Cmd(TIM3, ENABLE);
+				set = 1;
+				counter_seg=0;
+				TIM_Cmd(TIM5, ENABLE);
+
+				for(int i=0 ; i<9979999; i++);
 			}
 
-			else if(mode == 1)
+			if((GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_1) == 0) && set == 0)
 			{
-				mode = 0;
-				TIM_Cmd(TIM3, DISABLE);
-				TIM_Cmd(TIM2, ENABLE);
+				counter_seg++;
+				if(counter_seg==4) {counter_seg=0;}
+				for(int i=0 ; i<9979999; i++);
 			}
-			for(int i=0 ; i<9979999; i++);
+
+			if(GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_4) == 0 && set == 0){
+				if(counter_seg == 0)
+				{
+					a++;
+					if(a==3) {a=0;}
+
+				}
+				if(counter_seg == 1)
+				{
+					b++;
+					if(a==2 && b==4) {b=0;}
+					if(a<2 && b==10) {b=0;}
+				}
+				if(counter_seg == 2)
+				{
+					c++;
+					if(c==6) {c=0;}
+
+				}
+				if(counter_seg == 3)
+				{
+					d++;
+					if(d==10) {d=0;}
+				}
+				for(int i=0 ; i<9979999; i++);
+			}
 		}
 
-		if((GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_2) == 0) && mode == 1)
-		{
-			counter_seg++;
-			if(counter_seg==4) {counter_seg=0;}
-			for(int i=0 ; i<9979999; i++);
-		}
-
-		if(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_3) == 0 && mode == 1){
-			if(counter_seg == 0)
+		while(set == 1){
+			if(GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_0) == 0 && set == 1)
 			{
-				a1++;
-				if(a1==3) {a1=0;}
+				if(mode == 0)
+				{
+					mode = 1;
+					on_off = 0;
+					TIM_Cmd(TIM2, DISABLE);
+					TIM_Cmd(TIM3, ENABLE);
+				}
 
+				else if(mode == 1)
+				{
+					mode = 0;
+					TIM_Cmd(TIM3, DISABLE);
+					TIM_Cmd(TIM2, ENABLE);
+				}
+				for(int i=0 ; i<9979999; i++);
 			}
-			if(counter_seg == 1)
-			{
-				b1++;
-				if(a1==2 && b1==4) {b1=0;}
-				if(a1<2 && b1==10) {b1=0;}
-			}
-			if(counter_seg == 2)
-			{
-				c1++;
-				if(c1==6) {c1=0;}
 
-			}
-			if(counter_seg == 3)
+			if((GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_1) == 0) && mode == 1 && set == 1)
 			{
-				d1++;
-				if(d1==10) {d1=0;}
+				counter_seg++;
+				if(counter_seg==4) {counter_seg=0;}
+				for(int i=0 ; i<9979999; i++);
 			}
-			for(int i=0 ; i<9979999; i++);
-		}
 
-		if(a==a1 && b==b1 && c==c1 && d==d1 && mode == 0 && on_off == 0)
-		{
-			TIM_Cmd(TIM4, ENABLE);
+			if(GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_4) == 0 && mode == 1 && set == 1){
+				if(counter_seg == 0)
+				{
+					a1++;
+					if(a1==3) {a1=0;}
+
+				}
+				if(counter_seg == 1)
+				{
+					b1++;
+					if(a1==2 && b1==4) {b1=0;}
+					if(a1<2 && b1==10) {b1=0;}
+				}
+				if(counter_seg == 2)
+				{
+					c1++;
+					if(c1==6) {c1=0;}
+
+				}
+				if(counter_seg == 3)
+				{
+					d1++;
+					if(d1==10) {d1=0;}
+				}
+				for(int i=0 ; i<9979999; i++);
+			}
+
+			if(a==a1 && b==b1 && c==c1 && d==d1 && mode == 0 && on_off == 0 && set == 1)
+			{
+				TIM_Cmd(TIM4, ENABLE);
+			}
+
 			ADC_SoftwareStartConv(ADC1);
 			while(ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC) == RESET);
-			ADC_Result = ADC_GetConversionValue(ADC1);
-			solution = (ADC_Result*2.95)/4095;
 		}
 	}
 }
